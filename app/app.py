@@ -152,4 +152,8 @@ recommendations = (
 if recommendations.empty:
     st.warning("No recommendations available for this attraction type.")
 else:
-    st.dataframe(recommendations, use_container_width=True)
+    st.dataframe(
+    recommendations.astype(str),
+    use_container_width=True
+)
+
