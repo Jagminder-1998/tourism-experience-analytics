@@ -152,8 +152,5 @@ recommendations = (
 if recommendations.empty:
     st.warning("No recommendations available for this attraction type.")
 else:
-    st.dataframe(
-    recommendations.astype(str),
-    use_container_width=True
-)
-
+    # Convert to pure Python objects to avoid Arrow / LargeUtf8
+    st.table(recommendations.astype(str).to_dict(orient="records"))
