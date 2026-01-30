@@ -12,10 +12,10 @@ st.set_page_config(
 )
 
 st.title("🌍 Tourism Experience Analytics")
-st.write("Prediction & Recommendation System for Tourism Platforms")
+st.write("Visit Mode Prediction & Attraction Recommendation System")
 
 # ==================================================
-# LOAD DATA (CACHED)
+# LOAD DATA (CACHED – SAFE)
 # ==================================================
 @st.cache_data
 def load_data():
@@ -30,18 +30,21 @@ def clean_unique(series):
     return sorted(series.dropna().astype(str).unique())
 
 # ==================================================
-# TRAIN CLASSIFICATION MODEL (CACHED)
+# TRAIN MODEL (CACHED – DF NOT HASHED)
 # ==================================================
 @st.cache_resource
-def train_visit_mode_model(df):
+def train_visit_mode_model(_df):
 
-    features = df[
+    features = _df[
         ["VisitYear", "VisitMonth", "Continent", "Country", "Region", "AttractionType"]
     ].dropna()
 
-    target = df.loc[features.index, "VisitMode"]
+    target = _df.loc[features.index, "VisitMode"]
 
-    encoder = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
+    encoder = OneHotEncoder(
+        handle_unknown="ignore",
+        sparse_output=False
+    )
 
     encoded = encoder.fit_transform(
         features[["Continent", "Country", "Region", "AttractionType"]]
@@ -57,17 +60,17 @@ def train_visit_mode_model(df):
     numeric_df = features[["VisitYear", "VisitMonth"]].reset_index(drop=True)
     X = pd.concat([numeric_df, encoded_df], axis=1)
 
-    clf = RandomForestClassifier(
+    model = RandomForestClassifier(
         n_estimators=200,
         random_state=42,
         n_jobs=-1
     )
 
-    clf.fit(X, target)
+    model.fit(X, target)
 
-    return clf, encoder, encoded_df.columns
+    return model, encoder, encoded_df.columns
 
-clf, encoder, feature_columns = train_visit_mode_model(df)
+model, encoder, feature_columns = train_visit_mode_model(df)
 
 # ==================================================
 # SIDEBAR INPUTS
@@ -130,8 +133,8 @@ user_features = pd.concat(
     axis=1
 )
 
-predicted_mode = clf.predict(user_features)[0]
-st.success(predicted_mode)
+predicted_visit_mode = model.predict(user_features)[0]
+st.success(predicted_visit_mode)
 
 # ==================================================
 # RECOMMENDATION SYSTEM (AUTO, STABLE)
