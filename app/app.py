@@ -1,56 +1,113 @@
 import streamlit as st
 import pandas as pd
 from sklearn.preprocessing import OneHotEncoder
-from sklearn.neighbors import NearestNeighbors
 from sklearn.ensemble import RandomForestClassifier
 
-st.set_page_config(page_title="Tourism Experience Analytics", layout="wide")
-
-# ---------------- LOAD DATA ----------------
-df = pd.read_csv("data/cleaned/master_dataset.csv")
+# ==================================================
+# PAGE CONFIG
+# ==================================================
+st.set_page_config(
+    page_title="Tourism Experience Analytics",
+    layout="wide"
+)
 
 st.title("🌍 Tourism Experience Analytics")
 st.write("Prediction & Recommendation System for Tourism Platforms")
 
-# ---------------- SIDEBAR ----------------
+# ==================================================
+# LOAD DATA (CACHED)
+# ==================================================
+@st.cache_data
+def load_data():
+    return pd.read_csv("data/cleaned/master_dataset.csv")
+
+df = load_data()
+
+# ==================================================
+# HELPER FUNCTION
+# ==================================================
+def clean_unique(series):
+    return sorted(series.dropna().astype(str).unique())
+
+# ==================================================
+# TRAIN CLASSIFICATION MODEL (CACHED)
+# ==================================================
+@st.cache_resource
+def train_visit_mode_model(df):
+
+    features = df[
+        ["VisitYear", "VisitMonth", "Continent", "Country", "Region", "AttractionType"]
+    ].dropna()
+
+    target = df.loc[features.index, "VisitMode"]
+
+    encoder = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
+
+    encoded = encoder.fit_transform(
+        features[["Continent", "Country", "Region", "AttractionType"]]
+    )
+
+    encoded_df = pd.DataFrame(
+        encoded,
+        columns=encoder.get_feature_names_out(
+            ["Continent", "Country", "Region", "AttractionType"]
+        )
+    )
+
+    numeric_df = features[["VisitYear", "VisitMonth"]].reset_index(drop=True)
+    X = pd.concat([numeric_df, encoded_df], axis=1)
+
+    clf = RandomForestClassifier(
+        n_estimators=200,
+        random_state=42,
+        n_jobs=-1
+    )
+
+    clf.fit(X, target)
+
+    return clf, encoder, encoded_df.columns
+
+clf, encoder, feature_columns = train_visit_mode_model(df)
+
+# ==================================================
+# SIDEBAR INPUTS
+# ==================================================
 st.sidebar.header("User Input")
 
-visit_year = st.sidebar.selectbox("Visit Year", sorted(df["VisitYear"].unique()))
-visit_month = st.sidebar.selectbox("Visit Month", sorted(df["VisitMonth"].unique()))
-continent = st.sidebar.selectbox("Continent", df["Continent"].unique())
-country = st.sidebar.selectbox("Country", df["Country"].unique())
-region = st.sidebar.selectbox("Region", df["Region"].unique())
-attraction_type = st.sidebar.selectbox("Attraction Type", df["AttractionType"].unique())
+visit_year = st.sidebar.selectbox(
+    "Visit Year",
+    sorted(df["VisitYear"].dropna().unique())
+)
 
-# ---------------- VISIT MODE PREDICTION ----------------
-features = df[[
-    "VisitYear",
-    "VisitMonth",
+visit_month = st.sidebar.selectbox(
+    "Visit Month",
+    sorted(df["VisitMonth"].dropna().unique())
+)
+
+continent = st.sidebar.selectbox(
     "Continent",
+    clean_unique(df["Continent"])
+)
+
+country = st.sidebar.selectbox(
     "Country",
+    clean_unique(df["Country"])
+)
+
+region = st.sidebar.selectbox(
     "Region",
-    "AttractionType"
-]]
-
-target = df["VisitMode"]
-
-encoder = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
-encoded = encoder.fit_transform(
-    features[["Continent", "Country", "Region", "AttractionType"]]
+    clean_unique(df["Region"])
 )
 
-encoded_df = pd.DataFrame(
-    encoded,
-    columns=encoder.get_feature_names_out(
-        ["Continent", "Country", "Region", "AttractionType"]
-    )
+attraction_type = st.sidebar.selectbox(
+    "Attraction Type",
+    clean_unique(df["AttractionType"])
 )
 
-numeric_df = features[["VisitYear", "VisitMonth"]].reset_index(drop=True)
-X = pd.concat([numeric_df, encoded_df], axis=1)
-
-clf = RandomForestClassifier(n_estimators=200, random_state=42)
-clf.fit(X, target)
+# ==================================================
+# VISIT MODE PREDICTION
+# ==================================================
+st.subheader("🧳 Predicted Visit Mode")
 
 user_input = pd.DataFrame([{
     "VisitYear": visit_year,
@@ -61,38 +118,35 @@ user_input = pd.DataFrame([{
     "AttractionType": attraction_type
 }])
 
-user_encoded = encoder.transform(user_input[["Continent","Country","Region","AttractionType"]])
-user_df = pd.concat([
-    user_input[["VisitYear","VisitMonth"]].reset_index(drop=True),
-    pd.DataFrame(user_encoded, columns=encoded_df.columns)
-], axis=1)
-
-predicted_mode = clf.predict(user_df)[0]
-
-st.subheader("🧳 Predicted Visit Mode")
-st.success(predicted_mode)
-
-# ---------------- RECOMMENDATION SYSTEM ----------------
-st.subheader("🏖️ Recommended Attractions")
-
-rec_df = (
-    df[["Attraction", "AttractionType"]]
-    .dropna()
-    .drop_duplicates()
-    .reset_index(drop=True)
+user_encoded = encoder.transform(
+    user_input[["Continent", "Country", "Region", "AttractionType"]]
 )
 
-enc = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
-X_rec = enc.fit_transform(rec_df[["AttractionType"]])
+user_features = pd.concat(
+    [
+        user_input[["VisitYear", "VisitMonth"]].reset_index(drop=True),
+        pd.DataFrame(user_encoded, columns=feature_columns)
+    ],
+    axis=1
+)
 
-nn = NearestNeighbors(n_neighbors=6, metric="cosine")
-nn.fit(X_rec)
+predicted_mode = clf.predict(user_features)[0]
+st.success(predicted_mode)
 
-selected_attr = st.selectbox("Choose an attraction", rec_df["Attraction"].values)
+# ==================================================
+# RECOMMENDATION SYSTEM (AUTO, STABLE)
+# ==================================================
+st.subheader("🏖️ Recommended Attractions")
 
-idx = rec_df[rec_df["Attraction"] == selected_attr].index[0]
-_, indices = nn.kneighbors(X_rec[idx].reshape(1, -1))
+recommendations = (
+    df[df["AttractionType"] == attraction_type]
+    [["Attraction", "AttractionType"]]
+    .dropna()
+    .drop_duplicates()
+    .head(5)
+)
 
-recommendations = rec_df.iloc[indices[0][1:]]
-
-st.dataframe(recommendations)
+if recommendations.empty:
+    st.warning("No recommendations available for this attraction type.")
+else:
+    st.dataframe(recommendations, use_container_width=True)
