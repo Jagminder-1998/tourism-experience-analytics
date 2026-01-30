@@ -152,5 +152,8 @@ recommendations = (
 if recommendations.empty:
     st.warning("No recommendations available for this attraction type.")
 else:
-    # Convert to pure Python objects to avoid Arrow / LargeUtf8
-    st.table(recommendations.astype(str).to_dict(orient="records"))
+    for _, row in recommendations.iterrows():
+        st.markdown(
+            f"• **{str(row['Attraction'])}**  \n"
+            f"  _{str(row['AttractionType'])}_"
+        )
